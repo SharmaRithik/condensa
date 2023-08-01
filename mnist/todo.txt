@@ -1,0 +1,3 @@
+Cifar 10 ~ Flatten it 32*32*3
+Cifar paper ~ examples
+
