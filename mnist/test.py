@@ -12,8 +12,8 @@ from condensa.schemes import Compose, Prune, Quantize
 torch.manual_seed(42)
 np.random.seed(42)
 
-# Ensure CUDA is available
-assert torch.cuda.is_available()
+# Check if CUDA is available
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Load data from CSV
 print("Reading the data...")
