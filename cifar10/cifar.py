@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import condensa
 from condensa.schemes import Prune
+from network import FullyConnectedNetwork  # Import the network architecture from the network.py file
 
 # Check if CUDA is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -16,30 +17,11 @@ transform = transforms.Compose([
 
 # Load training data
 train_data = datasets.CIFAR10('data', train=True, download=True, transform=transform)
-train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
+train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
 
 # Load test data
 test_data = datasets.CIFAR10('data', train=False, download=True, transform=transform)
-test_loader = DataLoader(test_data, batch_size=64, shuffle=True)
-
-# Define the network architecture
-class FullyConnectedNetwork(nn.Module):
-    def __init__(self):
-        super(FullyConnectedNetwork, self).__init__()
-        self.fc1 = nn.Linear(32*32*3, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, 128)
-        self.fc4 = nn.Linear(128, 64)
-        self.fc5 = nn.Linear(64, 10)
-
-    def forward(self, x):
-        x = x.view(x.shape[0], -1)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))
-        x = torch.relu(self.fc4(x))
-        x = self.fc5(x)
-        return x
+test_loader = DataLoader(test_data, batch_size=128, shuffle=True)
 
 # Initialize the network
 model = FullyConnectedNetwork().to(device)
@@ -50,6 +32,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Train the model
 for epoch in range(20):
+    total_loss = 0
     for images, labels in train_loader:
         images, labels = images.to(device), labels.to(device)
 
@@ -63,25 +46,17 @@ for epoch in range(20):
         # Backward pass and optimize
         loss.backward()
         optimizer.step()
+        
+        total_loss += loss.item()
 
-# Test the model
-correct = 0
-total = 0
-with torch.no_grad():
-    for images, labels in test_loader:
-        images, labels = images.to(device), labels.to(device)
-        output = model(images)
-        _, predicted = torch.max(output.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-print('Test Accuracy: %d %%' % (100 * correct / total))
+    # Print the epoch number and loss
+    print(f'Epoch {epoch+1}, Loss: {total_loss:.4f}')
 
 # Save the original model before compression
 torch.save(model.state_dict(), 'original_model_cifar10.pth')
 
 # Compression with Condensa
-MEM = Prune(0.95)
+MEM = Prune(0.98)
 
 # Convert data and labels to tensors
 train_data_tensor = torch.tensor(train_data.data, dtype=torch.float32).permute(0, 3, 1, 2)  # Change shape to (50000, 3, 32, 32)
@@ -89,14 +64,13 @@ train_targets_tensor = torch.tensor(train_data.targets, dtype=torch.int64)  # Co
 
 # Create a TensorDataset
 train_dataset = torch.utils.data.TensorDataset(train_data_tensor, train_targets_tensor)
-trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
 
 # Create a TensorDataset for test data
 test_data_tensor = torch.tensor(test_data.data, dtype=torch.float32).permute(0, 3, 1, 2)
 test_targets_tensor = torch.tensor(test_data.targets, dtype=torch.int64)
 test_dataset = torch.utils.data.TensorDataset(test_data_tensor, test_targets_tensor)
-testloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False)
-
+testloader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)
 
 # Compression setup
 lc = condensa.opt.LC(steps=35,
@@ -123,21 +97,4 @@ w_MEM = compressor_MEM.run()
 
 # Save compressed model
 torch.save(w_MEM.state_dict(), 'compressed_model_cifar10.pth')
-
-# Load compressed model
-compressed_model = FullyConnectedNetwork().to(device)
-compressed_model.load_state_dict(w_MEM.state_dict())
-
-# Test the compressed model
-correct = 0
-total = 0
-with torch.no_grad():
-    for images, labels in test_loader:
-        images, labels = images.to(device), labels.to(device)
-        output = compressed_model(images)
-        _, predicted = torch.max(output.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-print('Test Accuracy of Compressed Model: %d %%' % (100 * correct / total))
 
